@@ -19,18 +19,19 @@ class VideoMetadataPlugin: FlutterPlugin, MethodCallHandler {
     channel.setMethodCallHandler(this)
   }
 
-  override fun onMethodCall(call: MethodCall, result: Result) {when (call.method) {
-    "getMetadata" -> {
-      val path = call.argument<String>("path")
-      if (path.isNullOrBlank()) {
-        result.error("INVALID_ARGUMENT", "Video path is required", null)
-      } else {
-        runCatching { getVideoMetadata(path) }
-          .onSuccess(result::success)
-          .onFailure { result.error("ERROR", it.message, null) }
+  override fun onMethodCall(call: MethodCall, result: Result) {
+    when (call.method) {
+      "getMetadata" -> {
+        val path = call.argument<String>("path")
+        if (path.isNullOrBlank()) {
+          result.error("INVALID_ARGUMENT", "Video path is required", null)
+        } else {
+          runCatching { getVideoMetadata(path) }
+            .onSuccess(result::success)
+            .onFailure { result.error("ERROR", it.message, null) }
+        }
       }
-    }
-    else -> result.notImplemented()
+      else -> result.notImplemented()
     }
   }
 
@@ -45,26 +46,39 @@ class VideoMetadataPlugin: FlutterPlugin, MethodCallHandler {
 
     return try {
       mapOf(
-        "title" to retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_TITLE),
-        "duration" to retriever.getLong(MediaMetadataRetriever.METADATA_KEY_DURATION),
-        "width" to retriever.getInt(MediaMetadataRetriever.METADATA_KEY_VIDEO_WIDTH),
-        "height" to retriever.getInt(MediaMetadataRetriever.METADATA_KEY_VIDEO_HEIGHT),
-        "bitrate" to retriever.getInt(MediaMetadataRetriever.METADATA_KEY_BITRATE),
-        "mimeType" to retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_MIMETYPE),
-        "videoCodec" to mapCodec(findCodec(extractor, "video/")),
-        "audioCodec" to mapCodec(findCodec(extractor, "audio/")),
-        "fileSize" to file.length()
+        "title" to retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_TITLE).orEmpty(),
+        "duration" to retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_DURATION)?.toInt() ?: 0,
+        "width" to retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_VIDEO_WIDTH)?.toInt() ?: 0,
+        "height" to retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_VIDEO_HEIGHT)?.toInt() ?: 0,
+        "bitrate" to retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_BITRATE)?.toInt() ?: 0,
+        "rotation" to retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_VIDEO_ROTATION)?.toInt() ?: 0,
+        "frameRate" to retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_CAPTURE_FRAMERATE)?.toFloat() ?: 0f,
+
+        "fileSize" to file.length(),
+        "mimeType" to retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_MIMETYPE).orEmpty(),
+
+        "videoCodec" to mapCodec((0 until extractor.trackCount)
+          .mapNotNull { extractor.getTrackFormat(it).getString(MediaFormat.KEY_MIME) }
+          .firstOrNull { it.startsWith("video/") }),
+          
+        "audioCodec" to mapCodec((0 until extractor.trackCount)
+          .mapNotNull { extractor.getTrackFormat(it).getString(MediaFormat.KEY_MIME) }
+          .firstOrNull { it.startsWith("audio/") }),
+
+        "author" to retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_AUTHOR).orEmpty(),
+        "artist" to retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_ARTIST).orEmpty(),
+        "album" to retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_ALBUM).orEmpty(),
+        "genre" to retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_GENRE).orEmpty(),
+        "comment" to retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_COMMENT).orEmpty(),
+        "year" to retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_YEAR).orEmpty(),
+        "date" to retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_DATE).orEmpty(),
+        "location" to retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_LOCATION).orEmpty()
       )
     } finally {
       extractor.release()
       retriever.release()
     }
   }
-
-  private fun findCodec(extractor: MediaExtractor, prefix: String): String? =
-    (0 until extractor.trackCount)
-      .mapNotNull { extractor.getTrackFormat(it).getString(MediaFormat.KEY_MIME) }
-      .firstOrNull { it.startsWith(prefix) }
 
   private fun mapCodec(mime: String?): String? = when (mime) {
     "video/avc" -> "H.264 / AVC"
@@ -79,10 +93,4 @@ class VideoMetadataPlugin: FlutterPlugin, MethodCallHandler {
     "audio/vorbis" -> "Vorbis"
     else -> mime
   }
-
-  private fun MediaMetadataRetriever.getInt(key: Int): Int? =
-    extractMetadata(key)?.toIntOrNull()
-
-  private fun MediaMetadataRetriever.getLong(key: Int): Long? =
-    extractMetadata(key)?.toLongOrNull()
 }
