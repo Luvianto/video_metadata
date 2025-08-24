@@ -16,15 +16,15 @@ class MyApp extends StatefulWidget {
 }
 
 class _MyAppState extends State<MyApp> {
-  String _result = "Waiting for codec test...";
+  String _result = "Waiting for Video Metadata...";
 
   @override
   void initState() {
     super.initState();
-    _runCodecTest();
+    _runMetadataTest();
   }
 
-  Future<void> _runCodecTest() async {
+  Future<void> _runMetadataTest() async {
     try {
       // Load the bundled asset
       final byteData = await rootBundle.load('assets/MP4_SAMPLE_480_1_5MG.mp4');
@@ -32,46 +32,68 @@ class _MyAppState extends State<MyApp> {
       // Write it into a temporary file
       final tempDir = await getTemporaryDirectory();
       final file = File('${tempDir.path}/MP4_SAMPLE_480_1_5MG.mp4');
-      await file.writeAsBytes(byteData.buffer.asUint8List());
+      if (!file.existsSync()) {
+        await file.writeAsBytes(byteData.buffer.asUint8List());
+      }
 
-      // Get metadata using the plugin
-      final result = await VideoMetadata.getMetadata(file.path);
+      // Get Video Metadata using the plugin
+      final videoMetadata = await VideoMetadata.getVideoMetadata(file.path);
+      print(videoMetadata.toString());
+      final optionalMetadata = await VideoMetadata.getOptionalMetadata(
+        file.path,
+      );
+      print(optionalMetadata.toString());
 
       setState(() {
-        _result = formatMetadata(result ?? {});
+        _result =
+            formatVideoMetadata(videoMetadata ?? {}) +
+            formatOptionalMetadata(optionalMetadata ?? {});
       });
     } catch (e) {
+      print(e.toString());
       setState(() {
         _result = "Error: $e";
       });
     }
   }
 
-  String formatMetadata(Map<String, dynamic> data) {
-    final durationMs = data['duration'] ?? 0;
-    final durationSec = (durationMs / 1000).toStringAsFixed(2);
+  String formatDuration(int ms) {
+    final totalSeconds = ms ~/ 1000;
+    final minutes = totalSeconds ~/ 60;
+    final seconds = totalSeconds % 60;
+    return '$minutes:${seconds.toString().padLeft(2, '0')}';
+  }
 
-    final width = data['width'] ?? 0;
-    final height = data['height'] ?? 0;
-
-    final bitrateBps = data['bitrate'] ?? 0;
-    final bitrateMbps = (bitrateBps / 1000000).toStringAsFixed(2);
-
-    final videoCodec = data['videoCodec'] ?? 'Unknown';
-    final audioCodec = data['audioCodec'] ?? 'Unknown';
-    final mimeType = data['mimeType'] ?? 'Unknown';
-
-    final fileSizeBytes = data['fileSize'] ?? 0;
-    final fileSizeMB = (fileSizeBytes / (1024 * 1024)).toStringAsFixed(2);
+  String formatVideoMetadata(Map<String, dynamic> data) {
+    final durationMs = data['duration'];
+    final width = data['width'];
+    final height = data['height'];
+    final bitrateBps = data['bitrate'];
+    final fileSizeBytes = data['fileSize'];
 
     return '''
-Duration       : $durationSec s
+Duration       : ${formatDuration(durationMs)}
 Resolution     : $width x $height
-Bitrate        : $bitrateMbps Mbps
-Video Codec    : $videoCodec
-Audio Codec    : $audioCodec
-MIME Type      : $mimeType
-File Size      : $fileSizeMB MB
+Bitrate        : ${(bitrateBps / 1000000).toStringAsFixed(2)} Mbps
+Frame Rate     : ${data['frameRate']} fps
+Rotation       : ${data['rotation']}°
+Video Codec    : ${data['videoCodec']}
+Audio Codec    : ${data['audioCodec']}
+MIME Type      : ${data['mimeType']}
+File Size      : ${(fileSizeBytes / (1024 * 1024)).toStringAsFixed(2)} MB
+''';
+  }
+
+  String formatOptionalMetadata(Map<String, dynamic> data) {
+    return '''
+Title          : ${data['title']}
+Author         : ${data['author']}
+Artist         : ${data['artist']}
+Album          : ${data['album']}
+Genre          : ${data['genre']}
+Year           : ${data['year']}
+Date           : ${data['date']}
+Location       : ${data['location']}
 ''';
   }
 
@@ -79,7 +101,7 @@ File Size      : $fileSizeMB MB
   Widget build(BuildContext context) {
     return MaterialApp(
       home: Scaffold(
-        appBar: AppBar(title: const Text('MediaCodec Test Harness')),
+        appBar: AppBar(title: const Text('Video Metadata Inspector')),
         body: Padding(
           padding: const EdgeInsets.all(16.0),
           child: SingleChildScrollView(

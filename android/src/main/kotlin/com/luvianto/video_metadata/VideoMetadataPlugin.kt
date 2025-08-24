@@ -20,64 +20,98 @@ class VideoMetadataPlugin: FlutterPlugin, MethodCallHandler {
   }
 
   override fun onMethodCall(call: MethodCall, result: Result) {
-    when (call.method) {
-      "getMetadata" -> {
-        val path = call.argument<String>("path")
-        if (path.isNullOrBlank()) {
-          result.error("INVALID_ARGUMENT", "Video path is required", null)
-        } else {
-          runCatching { getVideoMetadata(path) }
-            .onSuccess(result::success)
-            .onFailure { result.error("ERROR", it.message, null) }
-        }
-      }
-      else -> result.notImplemented()
+    val path = call.argument<String>("path")
+    if (path.isNullOrBlank()) {
+        result.error("INVALID_ARGUMENT", "Video path is required", null)
+        return
     }
-  }
+
+    when (call.method) {
+        "getVideoMetadata" -> {
+            val retriever = MediaMetadataRetriever().apply { setDataSource(path) }
+            val extractor = MediaExtractor().apply { setDataSource(path) }
+            val file = File(path)
+
+            runCatching {
+                getVideoMetadata(retriever, extractor, file)
+            }.onSuccess {
+                result.success(it)
+            }.onFailure {
+                result.error("ERROR", it.message, null)
+            }.also {
+                extractor.release()
+                retriever.release()
+            }
+        }
+
+        "getOptionalMetadata" -> {
+            val retriever = MediaMetadataRetriever().apply { setDataSource(path) }
+            runCatching {
+                getOptionalMetadata(retriever)
+            }.onSuccess {
+                result.success(it)
+            }.onFailure {
+                result.error("ERROR", it.message, null)
+            }.also {
+                retriever.release()
+            }
+        }
+
+        else -> result.notImplemented()
+    }
+}
+
 
   override fun onDetachedFromEngine(binding: FlutterPlugin.FlutterPluginBinding) {
     channel.setMethodCallHandler(null)
   }
 
-  private fun getVideoMetadata(path: String): Map<String, Any?> {
-    val retriever = MediaMetadataRetriever().apply { setDataSource(path) }
-    val extractor = MediaExtractor().apply { setDataSource(path) }
-    val file = File(path)
+  private fun getVideoMetadata(
+    retriever: MediaMetadataRetriever,
+    extractor: MediaExtractor,
+    file: File
+  ): Map<String, Any> {
+    val duration = retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_DURATION)?.toIntOrNull() ?: 0
+    val width = retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_VIDEO_WIDTH).orEmpty()
+    val height = retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_VIDEO_HEIGHT).orEmpty()
+    val bitrate = retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_BITRATE)?.toIntOrNull() ?: 0
+    val rotation = retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_VIDEO_ROTATION)?.toIntOrNull() ?: 0
+    val frameRate = retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_CAPTURE_FRAMERATE)?.toFloatOrNull() ?: 0f
+    
+    val videoMime = (0 until extractor.trackCount)
+        .mapNotNull { extractor.getTrackFormat(it).getString(MediaFormat.KEY_MIME) }
+        .firstOrNull { it.startsWith("video/") }
 
-    return try {
-      mapOf(
-        "title" to retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_TITLE).orEmpty(),
-        "duration" to retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_DURATION)?.toInt() ?: 0,
-        "width" to retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_VIDEO_WIDTH)?.toInt() ?: 0,
-        "height" to retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_VIDEO_HEIGHT)?.toInt() ?: 0,
-        "bitrate" to retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_BITRATE)?.toInt() ?: 0,
-        "rotation" to retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_VIDEO_ROTATION)?.toInt() ?: 0,
-        "frameRate" to retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_CAPTURE_FRAMERATE)?.toFloat() ?: 0f,
+    val audioMime = (0 until extractor.trackCount)
+        .mapNotNull { extractor.getTrackFormat(it).getString(MediaFormat.KEY_MIME) }
+        .firstOrNull { it.startsWith("audio/") }
 
-        "fileSize" to file.length(),
-        "mimeType" to retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_MIMETYPE).orEmpty(),
+    return mapOf(
+      "duration" to duration,
+      "width" to width,
+      "height" to height,
+      "bitrate" to bitrate,
+      "rotation" to rotation,
+      "frameRate" to frameRate,
+      "fileSize" to file.length(),
+      "videoCodec" to mapCodec(videoMime).orEmpty(),
+      "audioCodec" to mapCodec(audioMime).orEmpty(),
+      "mimeType" to retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_MIMETYPE).orEmpty()
+    )
+  }
 
-        "videoCodec" to mapCodec((0 until extractor.trackCount)
-          .mapNotNull { extractor.getTrackFormat(it).getString(MediaFormat.KEY_MIME) }
-          .firstOrNull { it.startsWith("video/") }),
-          
-        "audioCodec" to mapCodec((0 until extractor.trackCount)
-          .mapNotNull { extractor.getTrackFormat(it).getString(MediaFormat.KEY_MIME) }
-          .firstOrNull { it.startsWith("audio/") }),
 
-        "author" to retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_AUTHOR).orEmpty(),
-        "artist" to retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_ARTIST).orEmpty(),
-        "album" to retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_ALBUM).orEmpty(),
-        "genre" to retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_GENRE).orEmpty(),
-        "comment" to retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_COMMENT).orEmpty(),
-        "year" to retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_YEAR).orEmpty(),
-        "date" to retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_DATE).orEmpty(),
-        "location" to retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_LOCATION).orEmpty()
-      )
-    } finally {
-      extractor.release()
-      retriever.release()
-    }
+  private fun getOptionalMetadata(retriever: MediaMetadataRetriever): Map<String, String> {
+    return mapOf(
+      "title" to retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_TITLE).orEmpty(),
+      "author" to retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_AUTHOR).orEmpty(),
+      "artist" to retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_ARTIST).orEmpty(),
+      "album" to retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_ALBUM).orEmpty(),
+      "genre" to retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_GENRE).orEmpty(),
+      "year" to retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_YEAR).orEmpty(),
+      "date" to retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_DATE).orEmpty(),
+      "location" to retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_LOCATION).orEmpty()
+    )
   }
 
   private fun mapCodec(mime: String?): String? = when (mime) {
