@@ -45,6 +45,7 @@ class VideoMetadataPlugin: FlutterPlugin, MethodCallHandler {
 
     return try {
       mapOf(
+        "title" to retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_TITLE),
         "duration" to retriever.getLong(MediaMetadataRetriever.METADATA_KEY_DURATION),
         "width" to retriever.getInt(MediaMetadataRetriever.METADATA_KEY_VIDEO_WIDTH),
         "height" to retriever.getInt(MediaMetadataRetriever.METADATA_KEY_VIDEO_HEIGHT),

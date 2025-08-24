@@ -13,6 +13,7 @@ void main() {
         .setMockMethodCallHandler(channel, (MethodCall methodCall) async {
           if (methodCall.method == 'getMetadata') {
             return {
+              "title": "Sample Video",
               'duration': 30528,
               'width': 480,
               'height': 270,
@@ -34,7 +35,7 @@ void main() {
 
   test('getMetadata returns expected map', () async {
     final result = await platform.getMetadata('/fake/path/sample.mp4');
-
+    expect(result['title'], 'Sample Video');
     expect(result['duration'], 30528);
     expect(result['width'], 480);
     expect(result['height'], 270);
